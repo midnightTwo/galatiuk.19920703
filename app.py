@@ -100,8 +100,8 @@ def extract_codes(text):
     return codes
 
 
-def fetch_latest_emails(account, count=5):
-    """Fetch the latest N emails via IMAP/XOAUTH2."""
+def fetch_latest_code(account):
+    """Fetch the latest email that contains a verification code."""
     token = get_access_token(account)
     if not token:
         return {"error": "Failed to obtain access token"}
@@ -118,13 +118,13 @@ def fetch_latest_emails(account, count=5):
 
         msg_ids = messages[0].split()
         if not msg_ids:
-            return {"emails": [], "message": "Inbox is empty"}
+            return {"code": None, "message": "Inbox is empty"}
 
-        latest_ids = msg_ids[-count:]
-        latest_ids.reverse()
+        # Check last 10 emails to find the most recent one with a code
+        check_ids = msg_ids[-10:]
+        check_ids.reverse()
 
-        results = []
-        for mid in latest_ids:
+        for mid in check_ids:
             status, msg_data = mail.fetch(mid, "(RFC822)")
             if status != "OK":
                 continue
@@ -137,16 +137,17 @@ def fetch_latest_emails(account, count=5):
             body = extract_body(msg)
             codes = extract_codes(subject + " " + body)
 
-            results.append({
-                "subject": subject,
-                "from": sender,
-                "date": date_str,
-                "codes": codes,
-                "body_preview": body[:300],
-            })
+            if codes:
+                mail.logout()
+                return {
+                    "code": codes[-1],
+                    "from": sender,
+                    "subject": subject,
+                    "date": date_str,
+                }
 
         mail.logout()
-        return {"emails": results}
+        return {"code": None, "message": "No codes found"}
 
     except Exception as e:
         return {"error": str(e)}
@@ -158,11 +159,11 @@ def index():
     return render_template("index.html", accounts=ACCOUNTS)
 
 
-@app.route("/api/emails/<int:account_idx>")
-def api_emails(account_idx):
+@app.route("/api/code/<int:account_idx>")
+def api_code(account_idx):
     if account_idx < 0 or account_idx >= len(ACCOUNTS):
         return jsonify({"error": "Invalid account index"}), 400
-    data = fetch_latest_emails(ACCOUNTS[account_idx])
+    data = fetch_latest_code(ACCOUNTS[account_idx])
     return jsonify(data)
 
 
